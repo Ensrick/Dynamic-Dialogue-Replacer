@@ -14,7 +14,10 @@ namespace DDR
     class Hooks
     {
       public:
-        static void Install();
+        // Returns false only while it is still safe for SKSE to unload this DLL.
+        // Once the Detours transaction commits, subsequent failures use the
+        // non-modal fatal path rather than leaving installed hooks dangling.
+        [[nodiscard]] static bool Install();
 
       private:
         struct Response

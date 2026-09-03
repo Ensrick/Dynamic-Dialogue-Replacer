@@ -2,6 +2,11 @@
 
 SKSE plugin that allows for runtime replacement of dialogue subtitles and voice files. 
 
+The `port/1.7.104-no-modal` branch is a maintenance port of the released 1.4.1
+source for Skyrim SE/AE 1.7.104.0 and Address Library format 5. See
+[ENSRICK-PORT.md](ENSRICK-PORT.md) for the exact compatibility boundary,
+verification, packaging, and licensing details.
+
 For documentation on how to use this plugin, see the [wiki](https://github.com/KrisV-777/Dynamic-Dialogue-Replacer/wiki).  
 The Nexus Mods mirror can be found [here](https://www.nexusmods.com/skyrimspecialedition/mods/135618).
 
@@ -16,7 +21,7 @@ The Nexus Mods mirror can be found [here](https://www.nexusmods.com/skyrimspecia
 
 ### Clone
 ```
-https://github.com/KrisV-777/Dynamic-Dialogue-Replacer.git
+git clone --branch port/1.7.104-no-modal https://github.com/Ensrick/Dynamic-Dialogue-Replacer.git
 cd Dynamic-Dialogue-Replacer
 git submodule update --init --recursive
 ```
