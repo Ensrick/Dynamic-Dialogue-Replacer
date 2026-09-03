@@ -41,26 +41,41 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
         return true;
     };
 
+    if (!InitLogger()) {
+        return false;
+    }
+
     if (a_skse->IsEditor()) {
         logger::critical("Loaded in editor, marking as incompatible");
         return false;
-    } else if (!InitLogger()) {
-        logger::critical("Failed to initialize logger");
+    }
+
+    const auto runtime = a_skse->RuntimeVersion();
+    if (runtime != SKSE::RUNTIME_SSE_1_7_104) {
+        logger::critical("Unsupported runtime version {}; this build requires 1.7.104.0", runtime.string());
         return false;
     }
 
     SKSE::Init(a_skse);
 
     const auto msging = SKSE::GetMessagingInterface();
-    if (!msging->RegisterListener(SKSEMessageHandler)) {
-        logger::critical("Failed to register Listener");
+    const auto papyrus = SKSE::GetPapyrusInterface();
+    if (!msging || !papyrus) {
+        logger::critical("Required SKSE interfaces are unavailable");
         return false;
     }
 
-    const auto papyrus = SKSE::GetPapyrusInterface();
-    papyrus->Register(DDR::Papyrus::RegisterFunctions);
+    if (!DDR::Hooks::Install()) {
+        logger::critical("Hook installation failed before any persistent callback was registered");
+        return false;
+    }
 
-    DDR::Hooks::Install();
+    if (!msging->RegisterListener(SKSEMessageHandler)) {
+        SKSE::stl::report_and_fail("Failed to register the DDR message listener after hooks were installed");
+    }
+    if (!papyrus->Register(DDR::Papyrus::RegisterFunctions)) {
+        SKSE::stl::report_and_fail("Failed to register DDR Papyrus functions after hooks were installed");
+    }
 
     logger::info("{} loaded", plugin->GetName());
 

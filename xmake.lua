@@ -11,6 +11,11 @@ set_languages("cxx23")
 set_license("gplv3")
 set_warnings("allextra", "error")
 
+-- Keep CommonLib fatal diagnostics in the plugin log rather than opening a
+-- modal Windows message box. The define is global so the plugin and the
+-- CommonLib static library share the same inline failure implementation.
+add_defines("COMMONLIBSSE_NO_MODAL_ERRORS")
+
 -- Includes
 includes("lib/CommonLibSSE-NG/xmake.lua")
 includes("xmake/dotenv")
@@ -106,9 +111,9 @@ set_defaultplat("windows")
 set_defaultarchs("x64")
 
 -- set_config("skse_xbyak", true)
-set_config("skyrim_se", true)
+set_config("skyrim_se", false)
 set_config("skyrim_ae", true)
-set_config("skyrim_vr", true)
+set_config("skyrim_vr", false)
 
 --Applied to ALL targets
 rule("common")
@@ -152,13 +157,10 @@ target(PROJECT_NAME)
     add_deps("detours")
     add_includedirs("lib/detours/src")
 
-    -- CommonLibSSE
+    -- CommonLibSSE. Use the lower-level resource rule so the project-local
+    -- declaration can advertise the single runtime this port actually audits.
     add_deps("commonlibsse-ng")
-    add_rules("commonlibsse-ng.plugin", {
-        name = PROJECT_NAME,
-        author = "KrisV-777",
-        description = "SKSE Framework to (dynamically) hot replace player and NPC dialogue."
-    })
+    add_rules("commonlib.plugin")
 
     -- Source files
     set_pcxxheader("src/PCH.h")
@@ -199,19 +201,19 @@ target(PROJECT_NAME)
     end
 
     on_load(function(target)
-        local clib = target:rule("commonlibsse-ng.plugin")
-        if clib then
-            -- disable unwanted events
-            clib:set("install", nil)
-            clib:set("package", nil)
-            clib:set("build_after", nil)
-        end
+        target:data_set("commonlib.plugin.config", {
+            name = PROJECT_NAME,
+            author = "KrisV-777",
+            description = "SKSE Framework to (dynamically) hot replace player and NPC dialogue."
+        })
     end)
 
     -- Post Build
     after_build(function (target)
-        os.vcp(target:targetfile(), "dist/SKSE/Plugins")
-        os.vcp(target:symbolfile(), "dist/SKSE/Plugins")
+        local plugin_dir = "dist/SKSE/Plugins"
+        os.mkdir(plugin_dir)
+        os.vcp(target:targetfile(), plugin_dir)
+        os.vcp(target:symbolfile(), plugin_dir)
     end)
 target_end()
 

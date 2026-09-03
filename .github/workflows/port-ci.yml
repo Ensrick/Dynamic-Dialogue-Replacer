@@ -1,0 +1,108 @@
+name: Skyrim 1.7.104 Port CI
+
+on:
+  push:
+    branches:
+      - port/1.7.104-no-modal
+  pull_request:
+    branches:
+      - release/1.4.1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ddr-1-7-104-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and inspect DLL
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Check out pinned source and submodules
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up xmake 3.1.1
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: '3.1.1'
+
+      - name: Configure
+        run: xmake f -y -m release --build_papyrus=n
+
+      - name: Build
+        run: xmake -b -y DynamicDialogueReplacer
+
+      - name: Validate and stage DLL overlay
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dll = 'build\windows\x64\release\DynamicDialogueReplacer.dll'
+          $pdb = 'build\windows\x64\release\DynamicDialogueReplacer.pdb'
+          if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) {
+            throw 'DynamicDialogueReplacer.dll was not produced.'
+          }
+
+          $version = (Get-Item -LiteralPath $dll).VersionInfo.FileVersion
+          if ([version] $version -ne [version] '1.4.1.0') {
+            throw "Unexpected DLL file version: $version"
+          }
+
+          $exports = & dumpbin.exe /nologo /exports $dll | Out-String
+          foreach ($requiredExport in 'SKSEPlugin_Load', 'SKSEPlugin_Version') {
+            if ($exports -notmatch [regex]::Escape($requiredExport)) {
+              throw "Missing DLL export: $requiredExport"
+            }
+          }
+
+          $handle = [Runtime.InteropServices.NativeLibrary]::Load((Resolve-Path -LiteralPath $dll).Path)
+          try {
+            $metadata = [Runtime.InteropServices.NativeLibrary]::GetExport($handle, 'SKSEPlugin_Version')
+            $readUInt32 = {
+              param([int] $offset)
+              [uint32] [Runtime.InteropServices.Marshal]::ReadInt32($metadata, $offset)
+            }
+
+            if ((& $readUInt32 0x000) -ne 1) {
+              throw 'Unexpected SKSE plugin declaration version.'
+            }
+            if ((& $readUInt32 0x304) -ne 2) {
+              throw 'The DLL does not advertise Address Library format-5 support.'
+            }
+            if ((& $readUInt32 0x308) -ne 0 -or
+                (& $readUInt32 0x30C) -ne 0x01070680 -or
+                (& $readUInt32 0x310) -ne 0) {
+              throw 'The DLL metadata is not restricted to Skyrim 1.7.104.0.'
+            }
+          } finally {
+            [Runtime.InteropServices.NativeLibrary]::Free($handle)
+          }
+
+          $pluginDirectory = 'out\SKSE\Plugins'
+          New-Item -ItemType Directory -Path $pluginDirectory -Force | Out-Null
+          Copy-Item -LiteralPath $dll -Destination $pluginDirectory -Force
+          if (Test-Path -LiteralPath $pdb -PathType Leaf) {
+            Copy-Item -LiteralPath $pdb -Destination $pluginDirectory -Force
+          }
+          Copy-Item -LiteralPath 'ENSRICK-PORT.md', 'COPYING', 'EXCEPTIONS.md' -Destination out -Force
+
+          $hash = (Get-FileHash -LiteralPath "$pluginDirectory\DynamicDialogueReplacer.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash *SKSE/Plugins/DynamicDialogueReplacer.dll" | Set-Content -LiteralPath 'out\SHA256SUMS.txt' -Encoding ascii
+
+      - name: Upload DLL overlay
+        uses: actions/upload-artifact@v4
+        with:
+          name: DynamicDialogueReplacer-1.4.1-Skyrim-1.7.104-overlay
+          path: out
+          if-no-files-found: error
